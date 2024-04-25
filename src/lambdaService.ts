@@ -2,9 +2,12 @@ import { StackResourceSummary } from '@aws-sdk/client-cloudformation'
 import * as core from '@actions/core'
 import { isValidResourceStatus, onlyUnique } from './utils'
 import { ResourceType } from './constants'
-import { LambdaClient } from '@aws-sdk/client-lambda'
-import { ListVersionsByFunctionCommand } from '@aws-sdk/client-lambda/dist-types/commands/ListVersionsByFunctionCommand'
-import { ListAliasesCommand } from '@aws-sdk/client-lambda/dist-types/commands/ListAliasesCommand'
+import {
+  DeleteFunctionCommand,
+  LambdaClient,
+  ListAliasesCommand,
+  ListVersionsByFunctionCommand
+} from '@aws-sdk/client-lambda'
 
 const clientConfig = {
   region: core.getInput('REGION'),
@@ -84,6 +87,20 @@ async function getLambdaAliasVersions(functionName: string): Promise<string[]> {
   return output
 }
 
+async function deleteLambdaVersions(functionName: string, versions: string[]) {
+  const promises = versions.map(version => {
+    const deleteCommand = new DeleteFunctionCommand({
+      FunctionName: functionName,
+      Qualifier: version
+    })
+    return lambdaClient.send(deleteCommand)
+  })
+
+  core.info(`Deleting ${functionName} versions: ${JSON.stringify(versions)}`)
+
+  await Promise.all(promises)
+}
+
 async function pruneLambdaVersion(
   functionName: string,
   retainVersion = 3
@@ -97,8 +114,7 @@ async function pruneLambdaVersion(
     .sort((a, b) => Number(b) - Number(a))
     .slice(retainVersion)
 
-  console.log('deleting...', versionToDelete)
-  // await deleteLambdaVersions(functionName, versionToDelete);
+  await deleteLambdaVersions(functionName, versionToDelete)
 }
 
 export async function handlePruneLambdaVersion(

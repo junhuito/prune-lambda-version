@@ -62436,8 +62436,6 @@ const core = __importStar(__nccwpck_require__(2186));
 const utils_1 = __nccwpck_require__(1314);
 const constants_1 = __nccwpck_require__(9042);
 const client_lambda_1 = __nccwpck_require__(6584);
-const ListVersionsByFunctionCommand_1 = __nccwpck_require__(4749);
-const ListAliasesCommand_1 = __nccwpck_require__(3297);
 const clientConfig = {
     region: core.getInput('REGION'),
     credentials: {
@@ -62451,7 +62449,7 @@ async function getLambdaVersions(functionName) {
     let marker;
     let output = [];
     while (!firstCalled || !!marker) {
-        const command = new ListVersionsByFunctionCommand_1.ListVersionsByFunctionCommand({
+        const command = new client_lambda_1.ListVersionsByFunctionCommand({
             FunctionName: functionName,
             Marker: marker
         });
@@ -62474,7 +62472,7 @@ async function getLambdaAliasVersions(functionName) {
     let marker;
     let output = [];
     while (!firstCalled || !!marker) {
-        const command = new ListAliasesCommand_1.ListAliasesCommand({
+        const command = new client_lambda_1.ListAliasesCommand({
             FunctionName: functionName,
             Marker: marker
         });
@@ -62493,6 +62491,17 @@ async function getLambdaAliasVersions(functionName) {
     }
     return output;
 }
+async function deleteLambdaVersions(functionName, versions) {
+    const promises = versions.map(version => {
+        const deleteCommand = new client_lambda_1.DeleteFunctionCommand({
+            FunctionName: functionName,
+            Qualifier: version
+        });
+        return lambdaClient.send(deleteCommand);
+    });
+    core.info(`Deleting ${functionName} versions: ${JSON.stringify(versions)}`);
+    await Promise.all(promises);
+}
 async function pruneLambdaVersion(functionName, retainVersion = 3) {
     const lambdaVersions = await getLambdaVersions(functionName);
     const lambdaAliasVersions = await getLambdaAliasVersions(functionName);
@@ -62500,8 +62509,7 @@ async function pruneLambdaVersion(functionName, retainVersion = 3) {
     const versionToDelete = [...versions]
         .sort((a, b) => Number(b) - Number(a))
         .slice(retainVersion);
-    console.log('deleting...', versionToDelete);
-    // await deleteLambdaVersions(functionName, versionToDelete);
+    await deleteLambdaVersions(functionName, versionToDelete);
 }
 async function handlePruneLambdaVersion(stackResourcesSummary, retainVersion = 3) {
     const lambdaFunctions = [];
@@ -62592,22 +62600,6 @@ const onlyUnique = (value, index, array) => {
     return array.indexOf(value) === index;
 };
 exports.onlyUnique = onlyUnique;
-
-
-/***/ }),
-
-/***/ 3297:
-/***/ ((module) => {
-
-module.exports = eval("require")("@aws-sdk/client-lambda/dist-types/commands/ListAliasesCommand");
-
-
-/***/ }),
-
-/***/ 4749:
-/***/ ((module) => {
-
-module.exports = eval("require")("@aws-sdk/client-lambda/dist-types/commands/ListVersionsByFunctionCommand");
 
 
 /***/ }),
