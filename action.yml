@@ -16,6 +16,9 @@ inputs:
   SECRET_ACCESS_KEY:
     description: 'Your aws secret access key'
     required: true
+  STACK_NAME:
+    description: 'Your cloudformation stack name'
+    required: true
 
 # Define your outputs here.
 # outputs:
