@@ -1,23 +1,26 @@
-name: 'The name of your action here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: 'Prune lambda version'
+description: 'Prune lambda workflow by cloudformation stack name'
+author: 'Jun'
 
-# Add your action's branding here. This will appear on the GitHub Marketplace.
 branding:
   icon: 'heart'
   color: 'red'
 
-# Define your inputs here.
 inputs:
-  milliseconds:
-    description: 'Your input description here'
+  REGION:
+    description: 'Your aws region'
     required: true
-    default: '1000'
+  ACCESS_KEY_ID:
+    description: 'Your aws access key id'
+    required: true
+  SECRET_ACCESS_KEY:
+    description: 'Your aws secret access key'
+    required: true
 
 # Define your outputs here.
-outputs:
-  time:
-    description: 'Your output description here'
+# outputs:
+#   time:
+#     description: 'Your output description here'
 
 runs:
   using: node20
