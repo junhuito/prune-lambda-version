@@ -7,6 +7,9 @@ branding:
   color: 'red'
 
 inputs:
+  RETAIN_FUNCTION_VERSION:
+    description: 'Number of lambda function version to retain'
+    required: true
   REGION:
     description: 'Your aws region'
     required: true
