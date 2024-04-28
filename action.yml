@@ -9,7 +9,10 @@ branding:
 inputs:
   RETAIN_FUNCTION_VERSION:
     description: 'Number of lambda function version to retain'
-    required: true
+    required: false
+  RETAIN_LAYER_VERSION:
+    description: 'Number of lambda function version to retain'
+    required: false
   REGION:
     description: 'Your aws region'
     required: true
