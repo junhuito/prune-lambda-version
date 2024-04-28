@@ -1,5 +1,6 @@
 export enum ResourceType {
-  FUNCTION = 'AWS::Lambda::Function'
+  FUNCTION = 'AWS::Lambda::Function',
+  LAYER = 'AWS::Lambda::LayerVersion'
 }
 
 export enum ResourcesStatus {

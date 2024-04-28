@@ -1,6 +1,6 @@
 import { StackResourceSummary } from '@aws-sdk/client-cloudformation'
 import * as core from '@actions/core'
-import { isValidResourceStatus, onlyUnique } from './utils'
+import { chunk, isValidResourceStatus, onlyUnique } from './utils'
 import { ResourceType } from './constants'
 import {
   DeleteFunctionCommand,
@@ -17,6 +17,9 @@ const clientConfig = {
   }
 }
 
+/**
+ * @link Request Limit https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html#api-requests
+ */
 const lambdaClient = new LambdaClient(clientConfig)
 
 async function getLambdaVersions(functionName: string): Promise<string[]> {
@@ -88,17 +91,21 @@ async function getLambdaAliasVersions(functionName: string): Promise<string[]> {
 }
 
 async function deleteLambdaVersions(functionName: string, versions: string[]) {
-  const promises = versions.map(version => {
-    const deleteCommand = new DeleteFunctionCommand({
-      FunctionName: functionName,
-      Qualifier: version
+  const chunkedVersions = chunk(versions, 20)
+
+  for (const chunkedVersion of chunkedVersions) {
+    const promises = chunkedVersion.map(version => {
+      const deleteCommand = new DeleteFunctionCommand({
+        FunctionName: functionName,
+        Qualifier: version
+      })
+      return lambdaClient.send(deleteCommand)
     })
-    return lambdaClient.send(deleteCommand)
-  })
 
-  core.info(`Deleting ${functionName} versions: ${JSON.stringify(versions)}`)
+    await Promise.all(promises)
+  }
 
-  await Promise.all(promises)
+  core.info(`Deleted ${functionName} versions: ${JSON.stringify(versions)}`)
 }
 
 async function pruneLambdaVersion(

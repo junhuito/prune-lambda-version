@@ -62392,6 +62392,7 @@ exports.ResourcesStatus = exports.ResourceType = void 0;
 var ResourceType;
 (function (ResourceType) {
     ResourceType["FUNCTION"] = "AWS::Lambda::Function";
+    ResourceType["LAYER"] = "AWS::Lambda::LayerVersion";
 })(ResourceType || (exports.ResourceType = ResourceType = {}));
 var ResourcesStatus;
 (function (ResourcesStatus) {
@@ -62443,6 +62444,9 @@ const clientConfig = {
         secretAccessKey: core.getInput('SECRET_ACCESS_KEY')
     }
 };
+/**
+ * @link Request Limit https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html#api-requests
+ */
 const lambdaClient = new client_lambda_1.LambdaClient(clientConfig);
 async function getLambdaVersions(functionName) {
     let firstCalled = false;
@@ -62492,15 +62496,18 @@ async function getLambdaAliasVersions(functionName) {
     return output;
 }
 async function deleteLambdaVersions(functionName, versions) {
-    const promises = versions.map(version => {
-        const deleteCommand = new client_lambda_1.DeleteFunctionCommand({
-            FunctionName: functionName,
-            Qualifier: version
+    const chunkedVersions = (0, utils_1.chunk)(versions, 20);
+    for (const chunkedVersion of chunkedVersions) {
+        const promises = chunkedVersion.map(version => {
+            const deleteCommand = new client_lambda_1.DeleteFunctionCommand({
+                FunctionName: functionName,
+                Qualifier: version
+            });
+            return lambdaClient.send(deleteCommand);
         });
-        return lambdaClient.send(deleteCommand);
-    });
-    core.info(`Deleting ${functionName} versions: ${JSON.stringify(versions)}`);
-    await Promise.all(promises);
+        await Promise.all(promises);
+    }
+    core.info(`Deleted ${functionName} versions: ${JSON.stringify(versions)}`);
 }
 async function pruneLambdaVersion(functionName, retainVersion = 3) {
     const lambdaVersions = await getLambdaVersions(functionName);
@@ -62526,6 +62533,115 @@ async function handlePruneLambdaVersion(stackResourcesSummary, retainVersion = 3
     await Promise.allSettled(promises);
 }
 exports.handlePruneLambdaVersion = handlePruneLambdaVersion;
+
+
+/***/ }),
+
+/***/ 3060:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.handlePruneLayerVersion = void 0;
+const client_lambda_1 = __nccwpck_require__(6584);
+const core = __importStar(__nccwpck_require__(2186));
+const constants_1 = __nccwpck_require__(9042);
+const utils_1 = __nccwpck_require__(1314);
+const clientConfig = {
+    region: core.getInput('REGION'),
+    credentials: {
+        accessKeyId: core.getInput('ACCESS_KEY_ID'),
+        secretAccessKey: core.getInput('SECRET_ACCESS_KEY')
+    }
+};
+const lambdaClient = new client_lambda_1.LambdaClient(clientConfig);
+async function getLayerVersions(layerName) {
+    let firstCalled = false;
+    let marker;
+    let output = [];
+    while (!firstCalled || !!marker) {
+        const command = new client_lambda_1.ListLayerVersionsCommand({
+            LayerName: layerName,
+            Marker: marker
+        });
+        const response = await lambdaClient.send(command);
+        const layerVersions = [];
+        response.LayerVersions?.forEach(x => {
+            if (typeof x.Version !== 'undefined') {
+                layerVersions.push(x.Version);
+            }
+        });
+        output = [...output, ...layerVersions];
+        marker = response.NextMarker;
+        firstCalled = true;
+    }
+    return output.filter(utils_1.onlyUnique);
+}
+async function deleteLayerVersions(layerName, versions) {
+    const chunkedVersions = (0, utils_1.chunk)(versions, 20);
+    for (const chunkedVersion of chunkedVersions) {
+        const promises = chunkedVersion.map(version => {
+            const deleteCommand = new client_lambda_1.DeleteLayerVersionCommand({
+                LayerName: layerName,
+                VersionNumber: version
+            });
+            return lambdaClient.send(deleteCommand);
+        });
+        await Promise.all(promises);
+    }
+    core.info(`Deleted ${layerName} versions: ${JSON.stringify(versions)}`);
+}
+async function pruneLayerVersion(layerName, retainVersion = 3) {
+    const layerVersions = await getLayerVersions(layerName);
+    const versionToDelete = [...layerVersions]
+        .sort((a, b) => b - a)
+        .slice(retainVersion);
+    await deleteLayerVersions(layerName, versionToDelete);
+}
+async function handlePruneLayerVersion(stackResources, retainVersion = 3) {
+    const layersResources = stackResources.filter(resource => resource.ResourceType === constants_1.ResourceType.LAYER &&
+        (0, utils_1.isValidResourceStatus)(resource.ResourceStatus));
+    const layersName = [];
+    layersResources.forEach(layer => {
+        if (layer.PhysicalResourceId) {
+            const { layerName } = (0, utils_1.getLayerInfoByArn)(layer.PhysicalResourceId);
+            layersName.push(layerName);
+        }
+        else {
+            core.warning(`Missing layer arn: ${JSON.stringify(layer)}`);
+        }
+    });
+    const uniqueLayersName = layersName.filter(utils_1.onlyUnique);
+    const promises = uniqueLayersName.map(async (layerName) => {
+        await pruneLayerVersion(layerName, retainVersion);
+    });
+    await Promise.allSettled(promises);
+}
+exports.handlePruneLayerVersion = handlePruneLayerVersion;
 
 
 /***/ }),
@@ -62563,15 +62679,25 @@ exports.run = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const cloudformationService_1 = __nccwpck_require__(9985);
 const lambdaService_1 = __nccwpck_require__(7651);
+const layerService_1 = __nccwpck_require__(3060);
 async function run() {
     try {
-        const stackName = core.getInput('STACK_NAME');
+        const stackName = core.getInput('STACK_NAME', { required: true });
         const functionVersionToRetain = Number(core.getInput('RETAIN_FUNCTION_VERSION'));
+        const layerVersionToRetain = Number(core.getInput('RETAIN_LAYER_VERSION'));
+        core.info(`Retrieving stack resources...`);
         const stackResources = await (0, cloudformationService_1.getAllStackResources)(stackName);
-        if (Number.isNaN(functionVersionToRetain)) {
-            throw new Error('RETAIN_FUNCTION_VERSION must be a number');
+        if (!Number.isNaN(functionVersionToRetain) &&
+            functionVersionToRetain >= 0) {
+            core.info(`Starting to prune Lambda Versions...`);
+            core.info(`Lambda versions to retain: ${functionVersionToRetain}`);
+            await (0, lambdaService_1.handlePruneLambdaVersion)(stackResources, functionVersionToRetain);
         }
-        await (0, lambdaService_1.handlePruneLambdaVersion)(stackResources, functionVersionToRetain);
+        if (!Number.isNaN(layerVersionToRetain) && layerVersionToRetain >= 0) {
+            core.info(`Starting to prune Layer Versions...`);
+            core.info(`Layer versions to retain: ${functionVersionToRetain}`);
+            await (0, layerService_1.handlePruneLayerVersion)(stackResources, layerVersionToRetain);
+        }
     }
     catch (error) {
         if (error instanceof Error)
@@ -62589,7 +62715,7 @@ exports.run = run;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.onlyUnique = exports.isValidResourceStatus = void 0;
+exports.chunk = exports.retryReqeust = exports.getLayerInfoByArn = exports.onlyUnique = exports.isValidResourceStatus = void 0;
 const constants_1 = __nccwpck_require__(9042);
 const isValidResourceStatus = (status = '') => [
     constants_1.ResourcesStatus.CREATE_COMPLETE,
@@ -62600,6 +62726,37 @@ const onlyUnique = (value, index, array) => {
     return array.indexOf(value) === index;
 };
 exports.onlyUnique = onlyUnique;
+exports.getLayerInfoByArn = (() => {
+    const regex = /^arn:aws:lambda:(\w+-\w+-\w+):(\d+):layer:(.*):(\d+)$/;
+    return (arn) => {
+        const match = arn.match(regex);
+        if (match) {
+            const [, region, accountId, layerName, version] = match;
+            return {
+                region,
+                accountId,
+                layerName,
+                version
+            };
+        }
+        else {
+            throw new Error(`An error occurred: The provided ARN (${arn}) does not match the expected format for a lambda layer ARN.`);
+        }
+    };
+})();
+const retryReqeust = async (promise, retries = 3, when = (e) => true) => {
+    return promise.catch((error) => {
+        if (retries > 0) {
+            return (0, exports.retryReqeust)(promise, retries - 1);
+        }
+        else {
+            throw error;
+        }
+    });
+};
+exports.retryReqeust = retryReqeust;
+const chunk = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
+exports.chunk = chunk;
 
 
 /***/ }),
